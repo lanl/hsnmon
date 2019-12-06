@@ -1,0 +1,237 @@
+#!/bin/bash
+
+##
+# © (or copyright) 2019. Triad National Security, LLC. All rights reserved.
+# This program was produced under U.S. Government contract 89233218CNA000001 for Los Alamos
+# National Laboratory (LANL), which is operated by Triad National Security, LLC for the U.S.
+# Department of Energy/National Nuclear Security Administration. All rights in the program are
+# reserved by Triad National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting on its behalf a
+# nonexclusive, paid-up, irrevocable worldwide license in this material to reproduce, prepare
+# derivative works, distribute copies to the public, perform publicly and display publicly, and to permit
+# others to do so.
+##
+
+
+####################
+# Service: hsnmon
+# Script: hsnmon
+# Usage: Init script for hsnmon
+# Called From: CLI
+# Description: hsnmon reports on errors/performance on the OPA fabric from the fabric manager node
+####################
+
+# source functions
+. /etc/init.d/functions
+
+# Check that networking is up
+ok="0"
+while [ $ok -eq 0 ]
+do
+  if [ "${NETWORKING}" = "no" ]; then
+     echo "ERROR: No networking available - sleeping 5s"
+     /usr/bin/sleep 5
+  else
+    ok=`/usr/sbin/opainfo | /usr/bin/grep PortState | /usr/bin/grep Active | /usr/bin/wc -l`  
+    if [ $ok -eq 0 ]; then
+      echo "ERROR: No OPA interface available - sleeping 5s"
+      /usr/bin/sleep 5
+    fi
+fi
+done
+
+if [ "$1" == "start" ]; then
+   
+    echo -n "Starting hsnmon..."
+    if [ -f /usr/local/hsnmon/hsnmon.pl ]; then
+      echo -n "   Binary found - "
+      if [ -f /var/lock/subsys/hsnmon ]; then
+         if [ -f /etc/hsnmon_pause ]; then
+            echo "Resuming"
+            rm -f /etc/hsnmon_pause
+            /usr/local/hsnmon/hsnmon.pl hsn_counters
+            /usr/bin/logger -t hsnmon "HSNMon resuming after sleep cycle..."
+         else
+            echo "/var/lock/subsys/hsnmon exists - FAIL"
+         fi
+      else
+         /usr/local/hsnmon/hsnmon.pl 2>&1 /dev/null
+         RETVAL=$?
+         if [ $RETVAL -eq 0 ]; then
+            echo "SUCCESS"
+            touch /var/lock/subsys/hsnmon
+            if [ -f /etc/hsnmon_dst ]; then
+               echo "WARNING - DST mode enabled.  Run 'hsnmon dst-stop' to disable"
+            fi
+            rm -f /etc/hsnmon_pause
+         fi
+      fi
+   fi
+
+elif [ "$1" == "stop" ]; then
+
+   if [ -f /var/lock/subsys/hsnmon ]; then
+      echo -n "Shutting down hsnmon..."
+      killall hsnmon.pl
+      if [ `/usr/bin/pgrep get_port_ | /usr/bin/wc -l` -eq 1 ];then
+         killall send_to_rmq.py
+      fi
+      RETVAL=$?
+      echo "$RETVAL"
+   fi
+   rm -f /var/lock/subsys/hsnmon
+   rm -f /etc/hsnmon_pause
+   if [ -f /etc/hsnmon_dst ]; then
+      echo "WARNING - DST mode left enabled. DST mode will resume when hsnmon starts again.  Run 'hsnmon dst-stop' to disable"
+   fi
+
+elif [ "$1" == "status" ]; then
+
+   if [ `/bin/ps -ef | /bin/grep /usr/local/hsnmon/hsnmon.pl | /bin/grep -v grep | /usr/bin/wc -l` -eq 0 ]; then
+     if [ -f /var/lock/subsys/hsnmon ]; then
+       echo "hsnmon is not running, but subsys is locked..."
+     else
+       echo "hsnmon is not running..."
+     fi
+   else
+     if [ `/bin/ps -ef | /bin/grep /usr/local/hsnmon/hsnmon.pl | /bin/grep -v grep | /usr/bin/wc -l` -eq 1 ]; then
+       echo -n "hsnmon is "
+       if [ -f /etc/hsnmon_pause ]; then
+         echo "paused..."
+       else
+         echo "running..."
+       fi
+     elif [ `/usr/bin/pgrep get_port_ | /usr/bin/wc -l` -eq 1 ];then
+       echo "running with high frequency performance monitoring enabled..."
+     else
+       echo "More than 1 hsnmon instance is running..."
+     fi
+   fi
+
+   if [ -f /etc/hsnmon_dst ]; then
+      echo "DST mode enabled"
+   else
+      echo "DST mode disabled"
+   fi
+
+elif [ "$1" == "dst-start" ]; then
+   
+   echo -n "Starting DST mode..."
+   if [ -f /var/lock/subsys/hsnmon ]; then
+      if [ -f /etc/hsnmon_dst ]; then
+         echo "DST ALREADY ENABLED"
+      else
+         touch /etc/hsnmon_dst
+         if [ -f /etc/hsnmon_dst ]; then  
+            echo "SUCCESS"
+            /usr/bin/logger -t hsnmon "Starting DST mode..."
+         else
+            echo "FAILURE - DST File Not Found"
+         fi
+      fi
+   else
+      if [ -f /etc/hsnmon_dst ]; then
+         echo "DST ALREADY ENABLED"
+      else
+         touch /etc/hsnmon_dst
+         if [ -f /etc/hsnmon_dst ]; then
+            echo "SUCCESS"
+            /usr/bin/logger -t hsnmon "Starting DST mode..."
+         else
+            echo "FAILURE - DST File Not Found"
+         fi
+      fi
+      echo -n "WARNING - hsnmon is not running..."
+   fi
+
+elif [ "$1" == "dst-stop" ]; then
+
+   echo -n "Stopping DST mode..."
+   if [ -f /var/lock/subsys/hsnmon ]; then
+      if [ -f /etc/hsnmon_dst ]; then
+         rm -rf /etc/hsnmon_dst
+         if [ -f /etc/hsnmon_dst ]; then
+            echo "FAILURE - DST File Not Removed"
+         else 
+            echo "SUCCESS"
+            /usr/local/hsnmon/hsnmon.pl hsn_counters
+            /usr/bin/logger -t hsnmon "Stopping DST mode..."
+         fi
+      else
+         echo "DST ALREADY DISABLED"
+      fi
+   else
+      if [ -f /etc/hsnmon_dst ]; then
+         rm -rf /etc/hsnmon_dst
+         if [ -f /etc/hsnmon_dst ]; then
+            echo "FAILURE - DST File Not Removed"
+         else
+            echo "SUCCESS"
+            /usr/local/hsnmon/hsnmon.pl hsn_counters
+            /usr/bin/logger -t hsnmon "Stopping DST mode..."
+         fi
+      else
+         echo "DST ALREADY DISABLED"
+      fi
+      echo -n "WARNING - hsnmon is not running"
+   fi
+
+elif [ "$1" == "pause" ]; then
+
+   echo -n "Pausing hsnmon..."
+   if [ -f /var/lock/subsys/hsnmon ]; then
+      touch /etc/hsnmon_pause
+      if [ -f /etc/hsnmon_pause ]; then
+         echo "SUCCESS"
+         /usr/bin/logger -t hsnmon "HSNMon paused..."
+      else
+         echo "FAILURE - Pause File Not Found"
+      fi
+   else
+      echo "FAILURE - hsnmon not running"
+   fi
+
+elif [ "$1" == "clear-counters" ]; then
+   echo -n "Clearing fabric counters..."
+   LOG_FILE=$(/usr/local/hsnmon/hsnmon.pl hsn_counters)
+   if [ -f "$LOG_FILE/opa_counters.log" ]; then
+      echo "SUCCESS"
+   else
+	echo "log file: $LOG_FILE"
+      echo "FAILURE - Failed to clear counters with opaextractperf"
+   fi
+
+elif [ "$1" == "help" ] || [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+   echo "Usage: $0 {start|stop|status|dst-start|dst-stop|pause|clear-counters|help}"
+   echo " -- "
+   echo "Parameters:"
+   echo "   start            - Start or resume hsnmon (DST mode, if enabled, will resume)"
+   echo ""
+   echo "   stop             - Stop hsnmon (DST mode, if enabled, will remain enabled)"
+   echo ""
+   echo "   status           - Report current status of hsnmon"
+   echo ""
+   echo "   dst-start        - Enables DST Mode"
+   echo "                    - Disables error logging ONLY (if enabled)" 
+   echo "                    - Performance/fabric monitoring will continue (if enabled)"
+   echo "                    - DST mode can be enabled with or without hsnmon running"
+   echo ""
+   echo "   dst-stop         - Disables DST Mode"
+   echo "                    - Resumes error logging if enabled"
+   echo "                    - Clears counters"
+   echo "                    - DST mode can be disabled with or without hsnmon running"
+   echo ""
+   echo "   pause            - Disables/halts HSNmon from executing, upon resume (start), will clear counters"
+   echo ""
+   echo "   clear-counters   - Clears all counters"
+   echo ""
+   echo "   help, -h, --help - Displays this usage information"
+   echo "--"
+   echo "For more information, please read the README: /usr/local/hsnmon/README"
+   echo "For license information, please read the License: /usr/local/hsnmon/License"
+   echo ""
+else
+   echo "Usage: $0 {start|stop|status|dst-start|dst-stop|pause|clear-counters|help}"
+fi
+
+exit 0
