@@ -1,20 +1,15 @@
 # High Speed Network Monitoring Tool (HSNMon)
 
+HSNMon is a network monitoring service for collecting Omni-Path port counters from endpoints and switches.
+It can collect port counters via FastFabric tools and additionally can query the fabric manager directly to
+provide higher granularity monitoring than FastFabric tools can provide.
+
 HSNMon is released under the [BSD License](License).
 
 LA-CC-19-107
 
-Initial development was done at LANL.  The project now resides on Github:
+Initial development was done at Los Alamos National Laboratory.
 
-[https://github.com/lanl/hsnmon](https://github.com/lanl/hsnmon)
+We invite contributions [here](https://github.com/lanl/hsnmon/issues).
 
-We invite anyone to contribute suggestions, new features, bug-reports,
-bug-fixes, feature-requests, etc, through GitHub:
-
-[https://github.com/lanl/hsnmon/issues](https://github.com/lanl/hsnmon/issues)
-
-All bug-reports, issues, requests, etc, should go through GitHub.
-We will attempt to respond to requests, but we can't make promises about
-the level of resources that will be dedicated to maintanence.
-
-For detailed usage instructions please see the [documentation](https://github.com/lanl/hsnmon/blob/master/doc/README.md).
+For instructions please see the [documentation](https://github.com/lanl/hsnmon/blob/master/doc/README.md).
